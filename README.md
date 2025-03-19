@@ -22,9 +22,7 @@ The system monitors the following workflow:
 - Optional services can be enabled/disabled via configuration
 
 ## Notes
-- Since the system is stateless it does not keep any info about past notifications. As an example, if 
-  Tdarr transcodes a file after plex has already found it then the user will receive two notifications 
-  for plex that are identical
+- Since the system is stateless it does not keep any info about past notifications. As an example, if  Tdarr transcodes a file after plex has already found it then the user will receive two notifications for plex that are identical
 
 ## Installation
 
@@ -210,6 +208,8 @@ For users who prefer to separate notifications by media type, set `NTFY_USE_SEPA
 - Music: `NTFY_MUSIC_TOPIC` (default: media-music)
 
 This separation allows you to subscribe to only the content types you're interested in or to apply different notification settings to each content type in your ntfy client.
+
+All enabled services will route thru the different channels including tdarr, plex and tapearr
 
 ## Updating
 

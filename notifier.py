@@ -70,19 +70,31 @@ class Notifier:
         self.total_stages = len(self.process_stages)
         logger.debug(f"Process flow stages: {self.process_stages} (total: {self.total_stages})")
     
-    def get_topic_for_media_type(self, metadata=None):
+    def get_topic_for_media_type(self, metadata=None, webhook_source=None):
         """
-        Determine which topic to use based on media type in metadata
+        Determine which topic to use based on media type in metadata and webhook source
         
         Args:
             metadata: Dict with media information including media_type
+            webhook_source: Source of the webhook (sonarr, radarr, lidarr, plex, tdarr, tapearr)
             
         Returns:
             Topic name to use for notification
         """
         if not self.use_separate_topics:
             return self.default_topic
-            
+        
+        # Direct mapping for *arr services
+        if webhook_source:
+            webhook_source = webhook_source.lower()
+            if webhook_source == "sonarr":
+                return self.tv_topic
+            elif webhook_source == "radarr":
+                return self.movie_topic
+            elif webhook_source == "lidarr":
+                return self.music_topic
+        
+        # For tdarr, tapearr, plex, and other services, use metadata
         if metadata and "media_type" in metadata:
             media_type = metadata.get("media_type").lower()
             
@@ -95,7 +107,7 @@ class Notifier:
                 return self.music_topic
         
         # Default to the general topic if we can't determine media type
-        logger.debug(f"Using default topic due to unknown media type: {metadata.get('media_type') if metadata else 'None'}")
+        logger.debug(f"Using default topic due to unknown media type: {metadata.get('media_type') if metadata else 'None'} from source {webhook_source}")
         return self.default_topic
     
     def get_stage_info(self, stage_name):
@@ -242,7 +254,7 @@ class Notifier:
         # Default case for unknown media types
         return title[:max_length-3] + "..." if len(title) > max_length else title
     
-    def send_notification(self, title, message, priority="default", tags=None, file_path=None, stage=None, metadata=None):
+    def send_notification(self, title, message, priority="default", tags=None, file_path=None, stage=None, metadata=None, webhook_source=None):
         """
         Send notification through ntfy
         
@@ -250,7 +262,7 @@ class Notifier:
         Stage: current processing stage (for progress indication)
         """
         # Determine which topic to use
-        topic = self.get_topic_for_media_type(metadata)
+        topic = self.get_topic_for_media_type(metadata, webhook_source)
         url = f"{self.server}/{topic}"
         
         # Get stage information if provided
@@ -304,24 +316,40 @@ class Notifier:
             logger.exception(f"Error sending notification: {e}")
             return False
     
-    def notify_prowlarr_found(self, title, download_type):
-        """Notify when Prowlarr has found a torrent"""
-        logger.info(f"Notifying: Prowlarr found {title}")
+    def notify_prowlarr_found(self, title, download_type, source="unknown"):
+        """
+        Notify when Prowlarr has found a torrent
         
-        # Try to determine media type from download_type or title
+        Args:
+            title: Release title
+            download_type: Type of download/indexer
+            source: Source application that triggered the search (Sonarr, Radarr, Lidarr)
+        """
+        logger.info(f"Notifying: Prowlarr found {title} (source: {source})")
+        
+        # Determine media type based on the source application
         media_type = "unknown"
-        metadata = {"media_type": media_type}
         
-        # Try to guess media type from title patterns
-        if any(x in title.lower() for x in ["s01e", "season", "episode"]):
+        # Set media type based on source application
+        if source.lower() == "sonarr":
             media_type = "series"
-            metadata["media_type"] = "series"
-        elif any(x in title.lower() for x in ["1080p", "720p", "2160p", "bluray", "web-dl"]) and not any(x in title.lower() for x in ["s01e", "season", "episode"]):
+        elif source.lower() == "radarr":
             media_type = "movie"
-            metadata["media_type"] = "movie"
-        elif any(x in title.lower() for x in ["mp3", "flac", "album", "discography"]):
+        elif source.lower() == "lidarr":
             media_type = "music"
-            metadata["media_type"] = "music"
+        else:
+            # Log that we couldn't determine media type from source
+            logger.debug(f"Unknown source '{source}', trying to determine media type from title patterns")
+            
+            # If source doesn't match known apps, fall back to title pattern matching
+            if any(x in title.lower() for x in ["s01e", "season", "episode"]):
+                media_type = "series"
+            elif any(x in title.lower() for x in ["1080p", "720p", "2160p", "bluray", "web-dl"]) and not any(x in title.lower() for x in ["s01e", "season", "episode"]):
+                media_type = "movie"
+            elif any(x in title.lower() for x in ["mp3", "flac", "album", "discography"]):
+                media_type = "music"
+        
+        metadata = {"media_type": media_type}
         
         return self.send_notification(
             "Media Found",
@@ -329,7 +357,8 @@ class Notifier:
             tags=["search", "prowlarr", download_type, media_type],
             priority="low",
             stage="search",
-            metadata=metadata
+            metadata=metadata,
+            webhook_source="prowlarr"
         )
     
     def notify_arr_status(self, service, title, status, file_path=None, metadata=None):
@@ -404,7 +433,8 @@ class Notifier:
             tags=tags,
             file_path=file_path,
             stage=stage_mapping.get(status),
-            metadata=metadata
+            metadata=metadata,
+            webhook_source=service
         )
     
     def notify_parallel_process(self, process, title, status, error=None, file_path=None, metadata=None):
@@ -446,19 +476,27 @@ class Notifier:
             "tdarr": "transcode",
             "tapearr": "backup"
         }.get(process.lower())
+
+        # Create tags list with process and status
+        tags = [process, status]
+        
+        # Add media type to tags if available
+        if metadata and "media_type" in metadata:
+            tags.append(metadata["media_type"])
         
         logger.info(f"Notifying: {process} status {status} for {title}")
         return self.send_notification(
             f"{process.capitalize()} {status}",
             formatted_message,
             priority=priority,
-            tags=[process, status],
+            tags=tags,
             file_path=file_path,
             stage=process_stage,
-            metadata=metadata
+            metadata=metadata,
+            webhook_source=process
         )
     
-    def notify_processing_complete(self, title, file_path=None, metadata=None):
+    def notify_processing_complete(self, title, file_path=None, metadata=None, webhook_source=None):
         """Notify when all processing is complete for a file"""
         logger.info(f"Notifying: Processing complete for {title}")
         
@@ -472,10 +510,11 @@ class Notifier:
             tags=["complete", "success"],
             file_path=file_path,
             stage=last_stage,
-            metadata=metadata
+            metadata=metadata,
+            webhook_source=webhook_source
         )
     
-    def notify_error(self, title, error_message, file_path=None, stage=None, metadata=None):
+    def notify_error(self, title, error_message, file_path=None, stage=None, metadata=None, webhook_source=None):
         """Notify about errors in processing"""
         logger.error(f"Notifying: Error processing {title}")
         return self.send_notification(
@@ -485,7 +524,8 @@ class Notifier:
             tags=["error"],
             file_path=file_path,
             stage=stage,
-            metadata=metadata
+            metadata=metadata,
+            webhook_source=webhook_source
         )
     
     def notify_companion_file_update(self, file_type, parent_title, file_path, status, service, error=None):

@@ -60,7 +60,7 @@ async def prowlarr_webhook(request: Request):
         # First try to locate the title, categories, and indexer
         title = "Unknown"
         download_type = "torrent"
-        media_type = "unknown"
+        source = data.get("source", "unknown")  # Extract the source (Sonarr, Radarr, Lidarr)
         
         # Check if this is a release grab event
         if "release" in data and "releaseTitle" in data["release"]:
@@ -76,18 +76,11 @@ async def prowlarr_webhook(request: Request):
         elif "indexer" in data:
             download_type = data["indexer"]
         
-        # Try different locations for media type/category
-        if "release" in data and "categories" in data["release"]:
-            media_type = data["release"]["categories"][0] if data["release"]["categories"] else "unknown"
-        elif "categories" in data:
-            # Direct categories field
-            media_type = data["categories"][0] if data["categories"] else "unknown"
-        
         logger.info(f"Prowlarr webhook received for: {title}")
-        logger.debug(f"Prowlarr data: type={media_type}, download={download_type}")
+        logger.debug(f"Prowlarr data: download={download_type}, source={source}")
         
-        # Send notification directly
-        notifier.notify_prowlarr_found(title, download_type)
+        # Send notification directly with the source information
+        notifier.notify_prowlarr_found(title, download_type, source)
         
         return {"status": "success", "message": "Prowlarr webhook processed"}
     except Exception as e:
@@ -469,8 +462,18 @@ async def plex_webhook(request: Request):
     try:
         form = await request.form()
         payload = form.get("payload", "{}")
-        data = json.loads(payload)
         
+        # Log the raw payload (truncate if too large)
+        # debug_payload = payload
+        # try:
+        #     # Format the JSON with indentation for better readability in logs
+        #     formatted_payload = json.dumps(json.loads(debug_payload), indent=2)
+        #     logger.debug(f"Plex webhook raw payload:\n{formatted_payload}")
+        # except:
+        #     # Fall back to raw payload if JSON parsing fails
+        #     logger.debug(f"Plex webhook raw payload: {debug_payload}")
+        
+        data = json.loads(payload)
         event = data.get("event", "")
         
         logger.info(f"Plex webhook received: {event}")
@@ -480,7 +483,8 @@ async def plex_webhook(request: Request):
             
             # Extract common fields
             title = metadata.get("title", "Unknown")
-            media_type = metadata.get("type", "unknown")
+            # TODO - this might do better using "librarySectionType" to determine media type
+            media_type = metadata.get("type", "unknown") 
             
             # Extract structured metadata based on media type
             if media_type == "movie":
