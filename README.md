@@ -5,8 +5,6 @@ A stateless webhook-based system that sends notifications via ntfy when media pr
 ## Overview
 
 The system monitors the following workflow:
-
-1. **Media Processing Flow**:
    - Prowlarr locates media files
    - Sonarr/Radarr/Lidarr manages downloads and imports
    - Plex adds the new media to its library
@@ -22,6 +20,11 @@ The system monitors the following workflow:
 - Mobile-friendly notifications with condensed metadata
 - Comprehensive error reporting
 - Optional services can be enabled/disabled via configuration
+
+## Notes
+- Since the system is stateless it does not keep any info about past notifications. As an example, if 
+  Tdarr transcodes a file after plex has already found it then the user will receive two notifications 
+  for plex that are identical
 
 ## Installation
 
