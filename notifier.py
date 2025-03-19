@@ -53,6 +53,14 @@ class Notifier:
             "backup"       # Tapearr is backing up (optional)
         ]
         
+        # Special stages that don't fit into the normal flow
+        self.special_stages = {
+            "deleted": {
+                "emoji": "🗑️",  # Trash can emoji
+                "progress": "[0/{total}]"  # Will be formatted with total stages
+            }
+        }
+        
         # Adjust stages based on enabled services
         if not ENABLE_TDARR:
             self.process_stages.remove("transcode")
@@ -92,6 +100,17 @@ class Notifier:
     
     def get_stage_info(self, stage_name):
         """Get stage number and emoji for a given stage name"""
+        # Check if this is a special stage outside the normal flow
+        if stage_name in self.special_stages:
+            special_stage = self.special_stages[stage_name]
+            # Format the progress string with the total number of stages
+            progress = special_stage["progress"].format(total=self.total_stages)
+            return {
+                "index": -1,  # Special index for deleted files
+                "emoji": special_stage["emoji"],
+                "progress": progress
+            }
+            
         try:
             stage_index = self.process_stages.index(stage_name)
             # Use emoji to visually indicate progress - these will be put in message body, not headers
@@ -116,7 +135,7 @@ class Notifier:
                 "progress": "[?/?]"
             }
     
-    def format_media_title(self, title, metadata=None, max_length=60):
+    def format_media_title(self, title, metadata=None, max_length=60): # was 60
         """
         Format media title with metadata for display on mobile
         
@@ -137,7 +156,11 @@ class Notifier:
             # For movies: "Title (Year)" or just "Title" if no year
             year = metadata.get("year")
             if year:
-                base_title = title[:max_length-7] if len(title) > max_length-7 else title
+                # Always preserve the year, shortening the title if necessary
+                # Reserve 7 chars for " (YYYY)"
+                base_title = title
+                if len(title) > max_length - 7:
+                    base_title = title[:max_length-10] + "..."
                 return f"{base_title} ({year})"
             return title[:max_length-3] + "..." if len(title) > max_length else title
             
@@ -155,22 +178,68 @@ class Notifier:
                     season_int = int(season)
                     episode_int = int(episode)
                     
-                    # Reserve 7 chars for " S01E01"
-                    base_title = title[:max_length-7] if len(title) > max_length-7 else title
-                    return f"{base_title} S{season_int:02d}E{episode_int:02d}"
+                    # ALWAYS include the S01E01 format, even if title needs heavy truncation
+                    episode_suffix = f" S{season_int:02d}E{episode_int:02d}"
+                    
+                    # Check if the title plus suffix would exceed max length
+                    if len(title) + len(episode_suffix) > max_length:
+                        # Truncate title to fit within max_length with the suffix
+                        # Leave 3 chars for "..." plus episode_suffix length
+                        trunc_length = max_length - len(episode_suffix) - 3
+                        if trunc_length > 0:  # Ensure we don't try to get a negative slice
+                            base_title = title[:trunc_length] + "..."
+                        else:
+                            # If we can't fit both title and episode properly, prioritize the episode info
+                            # Use at least the first 10 chars of title + episode suffix
+                            max_title_len = max(10, max_length - len(episode_suffix))
+                            base_title = title[:max_title_len]
+                    else:
+                        base_title = title  # No truncation needed
+                    
+                    formatted_title = f"{base_title}{episode_suffix}    " # four extra spaces to offset the title
+                    # Add debug log to see what's being returned
+                    logger.debug(f"Formatted TV title: '{formatted_title}' (length: {len(formatted_title)})")
+                    return formatted_title
+                    
             except (TypeError, ValueError) as e:
                 logger.error(f"Error formatting season/episode numbers: {e}")
                 # If conversion fails, still include whatever we have in text form
                 if season is not None:
-                    return f"{title[:max_length-10]}... S{season}"
+                    # Make sure we have room for " S01" at minimum
+                    if len(title) > max_length - 4:
+                        title = title[:max_length-7] + "..."
+                    return f"{title} S{season}"
             
             return title[:max_length-3] + "..." if len(title) > max_length else title
             
         elif metadata.get("media_type") == "music":
-            # For music: "Artist - Album" (already handled in the title passed)
+            # For music tracks: Ensure we include at least artist info
+            artist = metadata.get("artist")
+            album = metadata.get("album")
+            
+            if artist and album:
+                # Check if the title already contains the artist and album info
+                if artist.lower() in title.lower() and album.lower() in title.lower():
+                    return title[:max_length-3] + "..." if len(title) > max_length else title
+                
+                # If not, prioritize artist - album format
+                formatted = f"{artist} - {album}"
+                if len(formatted) > max_length:
+                    # Truncate if too long
+                    formatted = formatted[:max_length-3] + "..."
+                return formatted
+            elif artist:
+                # Just include artist if that's all we have
+                if artist.lower() not in title.lower():
+                    if len(title) + len(artist) + 3 > max_length:
+                        # Not enough room for both, prioritize artist
+                        return f"{artist[:max_length-3]}..."
+                    return f"{artist} - {title[:max_length-len(artist)-3]}"
+            
+            # Default music handling
             return title[:max_length-3] + "..." if len(title) > max_length else title
             
-        # Default case
+        # Default case for unknown media types
         return title[:max_length-3] + "..." if len(title) > max_length else title
     
     def send_notification(self, title, message, priority="default", tags=None, file_path=None, stage=None, metadata=None):
@@ -307,7 +376,7 @@ class Notifier:
             "import_complete": "import",
             "download_failed": "download",
             "import_failed": "import",
-            "file_deleted": "import"  # File deletion happens after import
+            "file_deleted": "deleted"  # Special stage for deleted files (step 0)
         }
         
         # Create a formatted title using available metadata

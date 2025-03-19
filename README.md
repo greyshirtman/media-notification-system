@@ -8,7 +8,7 @@ The system monitors the following workflow:
 
 1. **Media Processing Flow**:
    - Prowlarr locates media files
-   - Sonarr/Radarr/Lidarr manage downloads and imports
+   - Sonarr/Radarr/Lidarr manages downloads and imports
    - Plex adds the new media to its library
    - Tdarr (optional) performs health checks and transcoding 
    - Tapearr (optional) backs up the processed files
