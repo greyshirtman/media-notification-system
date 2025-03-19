@@ -56,7 +56,7 @@ class Notifier:
         # Special stages that don't fit into the normal flow
         self.special_stages = {
             "deleted": {
-                "emoji": "🗑️",  # Trash can emoji
+                "emoji": ":wastebasket:",  # Trash can emoji
                 "progress": "[0/{total}]"  # Will be formatted with total stages
             }
         }
@@ -127,13 +127,13 @@ class Notifier:
             stage_index = self.process_stages.index(stage_name)
             # Use emoji to visually indicate progress - these will be put in message body, not headers
             stage_emoji = {
-                "search": "🔍",    # Magnifying glass
-                "download": "⬇️",   # Down arrow
-                "import": "📥",     # Inbox tray
-                "library": "📚",    # Books
-                "transcode": "🔄",  # Arrows in circle
-                "backup": "💾"      # Floppy disk
-            }.get(stage_name, "⚙️")  # Gear as default
+                "search": ":mag:",              # Magnifying glass
+                "download": ":arrow_down:",     # Down arrow
+                "import": ":inbox_tray:",       # Inbox tray
+                "library": ":books:",           # Books
+                "transcode": ":arrows_counterclockwise:",  # Arrows in circle
+                "backup": ":floppy_disk:"       # Floppy disk
+            }.get(stage_name, ":gear:")         # Gear as default
             
             return {
                 "index": stage_index,
@@ -143,7 +143,7 @@ class Notifier:
         except ValueError:
             return {
                 "index": -1, 
-                "emoji": "⚠️", 
+                "emoji": ":warning:", 
                 "progress": "[?/?]"
             }
     
