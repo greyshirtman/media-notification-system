@@ -56,7 +56,7 @@ class Notifier:
         # Special stages that don't fit into the normal flow
         self.special_stages = {
             "deleted": {
-                "emoji": ":wastebasket:",  # Trash can emoji
+                "emoji": "wastebasket",  # Trash can emoji
                 "progress": "[0/{total}]"  # Will be formatted with total stages
             }
         }
@@ -127,13 +127,13 @@ class Notifier:
             stage_index = self.process_stages.index(stage_name)
             # Use emoji to visually indicate progress - these will be put in message body, not headers
             stage_emoji = {
-                "search": ":mag:",              # Magnifying glass
-                "download": ":arrow_down:",     # Down arrow
-                "import": ":inbox_tray:",       # Inbox tray
-                "library": ":books:",           # Books
-                "transcode": ":arrows_counterclockwise:",  # Arrows in circle
-                "backup": ":floppy_disk:"       # Floppy disk
-            }.get(stage_name, ":gear:")         # Gear as default
+                "search": "mag",              # Magnifying glass
+                "download": "arrow_down",     # Down arrow
+                "import": "inbox_tray",       # Inbox tray
+                "library": "books",           # Books
+                "transcode": "arrows_counterclockwise",  # Arrows in circle
+                "backup": "floppy_disk"       # Floppy disk
+            }.get(stage_name, "gear")         # Gear as default
             
             return {
                 "index": stage_index,
@@ -143,7 +143,7 @@ class Notifier:
         except ValueError:
             return {
                 "index": -1, 
-                "emoji": ":warning:", 
+                "emoji": "warning", 
                 "progress": "[?/?]"
             }
     
@@ -272,6 +272,15 @@ class Notifier:
             # Only add ASCII progress to title in headers (no emoji)
             title = f"{stage_info['progress']} {title}"
         
+        # Initialize tags list if None
+        if tags is None:
+            tags = []
+        
+        # Add stage emoji to tags if available
+        if stage_info and stage_info['emoji']:
+            # Add emoji as a tag (should be in the format :emoji_name:)
+            tags.insert(0, stage_info['emoji'])  # Insert at beginning for prominence
+        
         headers = {
             "Title": title,
             "Priority": priority,
@@ -292,12 +301,9 @@ class Notifier:
         if tags:
             logger.debug(f"Tags: {tags}")
         
-        # Add emoji to the beginning of the message body instead of headers
-        if stage_info:
-            # Format the message if it's a media title
-            if isinstance(message, str):
-                message = self.format_media_title(message, metadata)
-            message = f"{stage_info['emoji']} {message}"
+        # Format the message without adding emoji (now handled in tags)
+        if isinstance(message, str) and metadata:
+            message = self.format_media_title(message, metadata)
             
         try:
             response = requests.post(
